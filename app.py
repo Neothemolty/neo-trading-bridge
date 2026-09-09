@@ -188,35 +188,45 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
                 except Exception as e:
                     log.warning(f"Failed to close long: {e}")
 
-            # 2. Open short
-            acct = broker.get_account()
-            available = min(acct["buying_power"], acct["cash"])
-            notional = round(available * 0.90, 2)
-            if notional < 10:
-                store.update_signal(signal_id, "rejected_insufficient_funds", error=f"notional={notional}")
-                log.error(f"Insufficient funds for SHORT {symbol}")
-                return
-
-            client_order_id = f"tv-{signal_id}-short"
-            result = broker.submit_sell_notional(symbol, notional, client_order_id)
-            store.update_signal(signal_id, "executed", order_id=result["order_id"])
-            store.store_trade(signal_id, result["order_id"], symbol, "sell_short", result.get("qty", str(notional)), result["status"])
-            log.info(f"✅ SHORT executed: ${notional} of {symbol} — order {result['order_id']}")
-
-            # 3. Set stop loss at previous candle high (or 2% fallback)
-            if high and float(high) > 0:
-                stop_price = round(float(high), 2)
-            elif price and price > 0:
-                stop_price = round(price * 1.02, 2)
+            # 2. Open short (only for non-crypto — Alpaca doesn't support crypto shorts)
+            is_crypto = "/" in symbol
+            if is_crypto:
+                # Crypto: just close the long, stay flat
+                if pos and float(pos["qty"]) > 0:
+                    store.update_signal(signal_id, "executed", order_id="closed_long")
+                    log.info(f"✅ SELL executed: closed long {symbol}, staying flat (crypto no short)")
+                else:
+                    store.update_signal(signal_id, "ignored_not_long")
+                    log.info(f"Not long {symbol} and crypto can't short — ignoring")
             else:
-                stop_price = None
-            if stop_price:
-                try:
-                    import time; time.sleep(2)
-                    broker.set_stop_loss_short(symbol, stop_price)
-                    log.info(f"🛡️ Short stop loss set at ${stop_price} (candle high)")
-                except Exception as e:
-                    log.error(f"⚠️ Failed to set short stop loss: {e}")
+                acct = broker.get_account()
+                available = min(acct["buying_power"], acct["cash"])
+                notional = round(available * 0.90, 2)
+                if notional < 10:
+                    store.update_signal(signal_id, "rejected_insufficient_funds", error=f"notional={notional}")
+                    log.error(f"Insufficient funds for SHORT {symbol}")
+                    return
+
+                client_order_id = f"tv-{signal_id}-short"
+                result = broker.submit_sell_notional(symbol, notional, client_order_id)
+                store.update_signal(signal_id, "executed", order_id=result["order_id"])
+                store.store_trade(signal_id, result["order_id"], symbol, "sell_short", result.get("qty", str(notional)), result["status"])
+                log.info(f"✅ SHORT executed: ${notional} of {symbol} — order {result['order_id']}")
+
+                # Set stop loss at previous candle high (or 2% fallback)
+                if high and float(high) > 0:
+                    stop_price = round(float(high), 2)
+                elif price and price > 0:
+                    stop_price = round(price * 1.02, 2)
+                else:
+                    stop_price = None
+                if stop_price:
+                    try:
+                        import time; time.sleep(2)
+                        broker.set_stop_loss_short(symbol, stop_price)
+                        log.info(f"🛡️ Short stop loss set at ${stop_price} (candle high)")
+                    except Exception as e:
+                        log.error(f"⚠️ Failed to set short stop loss: {e}")
 
     except Exception as e:
         store.update_signal(signal_id, "error", error=str(e))

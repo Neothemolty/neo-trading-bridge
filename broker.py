@@ -40,7 +40,12 @@ def get_account() -> dict:
 def get_position(symbol: str) -> Optional[dict]:
     """Get current position for symbol, or None if flat."""
     try:
-        pos = get_client().get_open_position(symbol)
+        # Try both formats: BTC/USD and BTCUSD (Alpaca accepts either but may vary)
+        try:
+            pos = get_client().get_open_position(symbol)
+        except Exception:
+            alt = symbol.replace("/", "")
+            pos = get_client().get_open_position(alt)
         return {
             "symbol": symbol,
             "qty": float(pos.qty),
@@ -126,7 +131,11 @@ def close_position(symbol: str) -> dict:
     """Close entire position for symbol. Returns order info."""
     log.info(f"Closing position for {symbol}")
     try:
-        order = get_client().close_position(symbol)
+        try:
+            order = get_client().close_position(symbol)
+        except Exception:
+            alt = symbol.replace("/", "")
+            order = get_client().close_position(alt)
         result = {
             "order_id": str(order.id) if hasattr(order, "id") else None,
             "symbol": symbol,

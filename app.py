@@ -87,7 +87,11 @@ class WebhookPayload(BaseModel):
     @field_validator("symbol")
     @classmethod
     def validate_symbol(cls, v):
-        return v.upper()
+        # Normalize: BTCUSD → BTC/USD for Alpaca
+        v = v.upper()
+        if v == "BTCUSD":
+            v = "BTC/USD"
+        return v
 
 
 # ─── Helpers ──────────────────────────────────────────────────

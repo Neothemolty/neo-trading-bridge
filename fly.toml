@@ -1,0 +1,22 @@
+app = "neo-trading-bridge"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8888"
+  TRADING_MODE = "paper"
+  PERMITTED_SYMBOLS = "SPY"
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8888
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

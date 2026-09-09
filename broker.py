@@ -66,13 +66,15 @@ def is_market_open() -> bool:
 def submit_buy(symbol: str, qty: float, client_order_id: str) -> dict:
     """Submit a market BUY order. Returns order info."""
     log.info(f"Submitting BUY {qty} {symbol} (client_order_id={client_order_id})")
+    # Crypto uses GTC, stocks use DAY
+    tif = TimeInForce.GTC if "/" in symbol else TimeInForce.DAY
     try:
         order = get_client().submit_order(
             MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=OrderSide.BUY,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
                 client_order_id=client_order_id,
             )
         )

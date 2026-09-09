@@ -123,8 +123,9 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
             log.critical(f"BLOCKED: {signal_id} — live endpoint")
             return
 
-        # Check market hours
-        if not broker.is_market_open():
+        # Check market hours (skip for crypto — trades 24/7)
+        is_crypto = "/" in symbol
+        if not is_crypto and not broker.is_market_open():
             store.update_signal(signal_id, "rejected_market_closed")
             log.warning(f"Market closed — signal {signal_id} rejected")
             return

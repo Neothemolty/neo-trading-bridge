@@ -127,6 +127,72 @@ def submit_buy(symbol: str, qty: float, client_order_id: str) -> dict:
         raise
 
 
+def submit_sell_notional(symbol: str, notional: float, client_order_id: str) -> dict:
+    """Submit a market SELL SHORT order by dollar amount (notional)."""
+    log.info(f"Submitting SHORT ${notional} of {symbol} (client_order_id={client_order_id})")
+    tif = TimeInForce.GTC if "/" in symbol else TimeInForce.DAY
+    try:
+        order = get_client().submit_order(
+            MarketOrderRequest(
+                symbol=symbol,
+                notional=notional,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                client_order_id=client_order_id,
+            )
+        )
+        result = {
+            "order_id": str(order.id),
+            "client_order_id": str(order.client_order_id),
+            "symbol": order.symbol,
+            "side": "sell_short",
+            "qty": str(order.qty) if order.qty else str(notional),
+            "status": str(order.status),
+        }
+        log.info(f"SHORT notional order submitted: {result}")
+        return result
+    except Exception as e:
+        log.error(f"SHORT notional order failed: {e}")
+        raise
+
+
+def set_stop_loss_short(symbol: str, stop_price: float) -> dict:
+    """Set a stop loss (buy to cover) for a short position."""
+    log.info(f"Setting short stop loss for {symbol} at ${stop_price}")
+    pos = get_position(symbol)
+    if not pos:
+        raise ValueError(f"No position found for {symbol}")
+
+    qty = abs(float(pos["qty"]))
+    tif = TimeInForce.GTC if "/" in symbol else TimeInForce.DAY
+
+    from alpaca.trading.requests import StopLimitOrderRequest
+    limit_price = round(stop_price * 1.005, 2)  # 0.5% above stop for short
+    try:
+        order = get_client().submit_order(
+            StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.BUY,  # Buy to cover
+                time_in_force=tif,
+                stop_price=stop_price,
+                limit_price=limit_price,
+            )
+        )
+        result = {
+            "order_id": str(order.id),
+            "symbol": symbol,
+            "stop_price": stop_price,
+            "qty": str(qty),
+            "status": str(order.status),
+        }
+        log.info(f"Short stop loss order submitted: {result}")
+        return result
+    except Exception as e:
+        log.error(f"Short stop loss order failed: {e}")
+        raise
+
+
 def set_stop_loss(symbol: str, stop_price: float) -> dict:
     """Set a stop loss order for the current position."""
     log.info(f"Setting stop loss for {symbol} at ${stop_price}")

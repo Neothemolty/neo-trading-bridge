@@ -130,14 +130,21 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
         pos = broker.get_position(symbol)
 
         if action == "BUY":
-            if pos and float(pos["qty"]) > 0:
-                # Already long → ignore
+            # 1. Close short if exists
+            if pos and pos.get("side") == "short":
+                try:
+                    broker.cancel_open_orders(symbol)
+                    broker.close_position(symbol)
+                    log.info(f"🔄 Closed SHORT {pos['qty']} {symbol} before going LONG")
+                    import time; time.sleep(2)  # Wait for settlement
+                except Exception as e:
+                    log.warning(f"Failed to close short: {e}")
+            elif pos and float(pos["qty"]) > 0:
                 store.update_signal(signal_id, "ignored_already_long")
-                log.info(f"Already long {symbol} ({pos['qty']} shares) — ignoring BUY")
+                log.info(f"Already long {symbol} ({pos['qty']}) — ignoring BUY")
                 return
 
-            # Use 90% of available cash as notional (dollar amount)
-            # Use cash (not buying_power which can be inflated for crypto)
+            # 2. Open long
             acct = broker.get_account()
             available = min(acct["buying_power"], acct["cash"])
             notional = round(available * 0.90, 2)
@@ -152,33 +159,51 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
             store.store_trade(signal_id, result["order_id"], symbol, "buy", result.get("qty", str(notional)), result["status"])
             log.info(f"✅ BUY executed: ${notional} of {symbol} — order {result['order_id']}")
 
-            # Set 2% stop loss
+            # 3. Set stop loss
             if price and price > 0:
                 stop_price = round(price * 0.98, 2)
                 try:
+                    import time; time.sleep(2)
                     broker.set_stop_loss(symbol, stop_price)
                     log.info(f"🛡️ Stop loss set at ${stop_price} (2% below entry ${price})")
                 except Exception as e:
                     log.error(f"⚠️ Failed to set stop loss: {e}")
 
         elif action == "SELL":
-            if not pos or float(pos["qty"]) <= 0:
-                # Not long → ignore (never auto-reverse to short)
-                store.update_signal(signal_id, "ignored_not_long")
-                log.info(f"Not long {symbol} — ignoring SELL (no auto-short)")
+            # 1. Close long if exists
+            if pos and float(pos["qty"]) > 0:
+                try:
+                    broker.cancel_open_orders(symbol)
+                    broker.close_position(symbol)
+                    log.info(f"🔄 Closed LONG {pos['qty']} {symbol} before going SHORT")
+                    import time; time.sleep(2)
+                except Exception as e:
+                    log.warning(f"Failed to close long: {e}")
+
+            # 2. Open short
+            acct = broker.get_account()
+            available = min(acct["buying_power"], acct["cash"])
+            notional = round(available * 0.90, 2)
+            if notional < 10:
+                store.update_signal(signal_id, "rejected_insufficient_funds", error=f"notional={notional}")
+                log.error(f"Insufficient funds for SHORT {symbol}")
                 return
 
-            # Cancel any open stop loss orders before closing
-            try:
-                broker.cancel_open_orders(symbol)
-                log.info(f"Cancelled open orders for {symbol} before closing")
-            except Exception as e:
-                log.warning(f"Failed to cancel open orders: {e}")
+            client_order_id = f"tv-{signal_id}-short"
+            result = broker.submit_sell_notional(symbol, notional, client_order_id)
+            store.update_signal(signal_id, "executed", order_id=result["order_id"])
+            store.store_trade(signal_id, result["order_id"], symbol, "sell_short", result.get("qty", str(notional)), result["status"])
+            log.info(f"✅ SHORT executed: ${notional} of {symbol} — order {result['order_id']}")
 
-            result = broker.close_position(symbol)
-            store.update_signal(signal_id, "executed", order_id=result.get("order_id"))
-            store.store_trade(signal_id, result.get("order_id"), symbol, "sell", str(pos["qty"]), "closing")
-            log.info(f"✅ SELL executed: closed {pos['qty']} {symbol} — order {result.get('order_id')}")
+            # 3. Set stop loss (2% ABOVE entry for short)
+            if price and price > 0:
+                stop_price = round(price * 1.02, 2)
+                try:
+                    import time; time.sleep(2)
+                    broker.set_stop_loss_short(symbol, stop_price)
+                    log.info(f"🛡️ Short stop loss set at ${stop_price} (2% above entry ${price})")
+                except Exception as e:
+                    log.error(f"⚠️ Failed to set short stop loss: {e}")
 
     except Exception as e:
         store.update_signal(signal_id, "error", error=str(e))

@@ -5,7 +5,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
-COPY .env .env
 
 EXPOSE 8888
 CMD ["python", "app.py"]

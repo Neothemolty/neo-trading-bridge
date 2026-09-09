@@ -1,3 +1,4 @@
+# Trading Bridge - TradingView to Alpaca
 FROM python:3.11-slim
 
 WORKDIR /app

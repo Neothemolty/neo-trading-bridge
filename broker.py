@@ -165,6 +165,23 @@ def set_stop_loss(symbol: str, stop_price: float) -> dict:
         raise
 
 
+def cancel_open_orders(symbol: str):
+    """Cancel all open orders for a symbol (e.g. stop losses before closing position)."""
+    log.info(f"Cancelling open orders for {symbol}")
+    try:
+        orders = get_client().get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol]))
+    except Exception:
+        alt = symbol.replace("/", "")
+        orders = get_client().get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[alt]))
+    
+    for order in orders:
+        try:
+            get_client().cancel_order_by_id(order.id)
+            log.info(f"Cancelled order {order.id} ({order.order_type} {order.side})")
+        except Exception as e:
+            log.warning(f"Failed to cancel order {order.id}: {e}")
+
+
 def close_position(symbol: str) -> dict:
     """Close entire position for symbol. Returns order info."""
     log.info(f"Closing position for {symbol}")

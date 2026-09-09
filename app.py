@@ -168,6 +168,13 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
                 log.info(f"Not long {symbol} — ignoring SELL (no auto-short)")
                 return
 
+            # Cancel any open stop loss orders before closing
+            try:
+                broker.cancel_open_orders(symbol)
+                log.info(f"Cancelled open orders for {symbol} before closing")
+            except Exception as e:
+                log.warning(f"Failed to cancel open orders: {e}")
+
             result = broker.close_position(symbol)
             store.update_signal(signal_id, "executed", order_id=result.get("order_id"))
             store.store_trade(signal_id, result.get("order_id"), symbol, "sell", str(pos["qty"]), "closing")

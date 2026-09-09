@@ -136,10 +136,11 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
                 log.info(f"Already long {symbol} ({pos['qty']} shares) — ignoring BUY")
                 return
 
-            # Use 95% of buying power as notional (dollar amount)
-            # This works for crypto (fractional qty) and avoids rounding issues
+            # Use 90% of available cash as notional (dollar amount)
+            # Use cash (not buying_power which can be inflated for crypto)
             acct = broker.get_account()
-            notional = round(acct["buying_power"] * 0.95, 2)
+            available = min(acct["buying_power"], acct["cash"])
+            notional = round(available * 0.90, 2)
             if notional < 10:
                 store.update_signal(signal_id, "rejected_insufficient_funds", error=f"buying_power={acct['buying_power']}")
                 log.error(f"Insufficient buying power for {symbol}")

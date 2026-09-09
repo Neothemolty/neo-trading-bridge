@@ -152,6 +152,15 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
             store.store_trade(signal_id, result["order_id"], symbol, "buy", result.get("qty", str(notional)), result["status"])
             log.info(f"✅ BUY executed: ${notional} of {symbol} — order {result['order_id']}")
 
+            # Set 2% stop loss
+            if price and price > 0:
+                stop_price = round(price * 0.98, 2)
+                try:
+                    broker.set_stop_loss(symbol, stop_price)
+                    log.info(f"🛡️ Stop loss set at ${stop_price} (2% below entry ${price})")
+                except Exception as e:
+                    log.error(f"⚠️ Failed to set stop loss: {e}")
+
         elif action == "SELL":
             if not pos or float(pos["qty"]) <= 0:
                 # Not long → ignore (never auto-reverse to short)

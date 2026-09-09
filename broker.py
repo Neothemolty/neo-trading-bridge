@@ -127,6 +127,44 @@ def submit_buy(symbol: str, qty: float, client_order_id: str) -> dict:
         raise
 
 
+def set_stop_loss(symbol: str, stop_price: float) -> dict:
+    """Set a stop loss order for the current position."""
+    log.info(f"Setting stop loss for {symbol} at ${stop_price}")
+    pos = get_position(symbol)
+    if not pos:
+        raise ValueError(f"No position found for {symbol}")
+    
+    qty = float(pos["qty"])
+    tif = TimeInForce.GTC if "/" in symbol else TimeInForce.DAY
+    
+    from alpaca.trading.requests import StopLimitOrderRequest
+    # For crypto: use stop_limit (stop not supported), limit 0.5% below stop
+    limit_price = round(stop_price * 0.995, 2)
+    try:
+        order = get_client().submit_order(
+            StopLimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
+                stop_price=stop_price,
+                limit_price=limit_price,
+            )
+        )
+        result = {
+            "order_id": str(order.id),
+            "symbol": symbol,
+            "stop_price": stop_price,
+            "qty": str(qty),
+            "status": str(order.status),
+        }
+        log.info(f"Stop loss order submitted: {result}")
+        return result
+    except Exception as e:
+        log.error(f"Stop loss order failed: {e}")
+        raise
+
+
 def close_position(symbol: str) -> dict:
     """Close entire position for symbol. Returns order info."""
     log.info(f"Closing position for {symbol}")

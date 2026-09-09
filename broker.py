@@ -63,6 +63,35 @@ def is_market_open() -> bool:
         return False
 
 
+def submit_buy_notional(symbol: str, notional: float, client_order_id: str) -> dict:
+    """Submit a market BUY order by dollar amount (notional). Works for fractional/crypto."""
+    log.info(f"Submitting BUY ${notional} of {symbol} (client_order_id={client_order_id})")
+    tif = TimeInForce.GTC if "/" in symbol else TimeInForce.DAY
+    try:
+        order = get_client().submit_order(
+            MarketOrderRequest(
+                symbol=symbol,
+                notional=notional,
+                side=OrderSide.BUY,
+                time_in_force=tif,
+                client_order_id=client_order_id,
+            )
+        )
+        result = {
+            "order_id": str(order.id),
+            "client_order_id": str(order.client_order_id),
+            "symbol": order.symbol,
+            "side": "buy",
+            "qty": str(order.qty) if order.qty else str(notional),
+            "status": str(order.status),
+        }
+        log.info(f"BUY notional order submitted: {result}")
+        return result
+    except Exception as e:
+        log.error(f"BUY notional order failed: {e}")
+        raise
+
+
 def submit_buy(symbol: str, qty: float, client_order_id: str) -> dict:
     """Submit a market BUY order. Returns order info."""
     log.info(f"Submitting BUY {qty} {symbol} (client_order_id={client_order_id})")

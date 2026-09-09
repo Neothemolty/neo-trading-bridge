@@ -136,25 +136,20 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
                 log.info(f"Already long {symbol} ({pos['qty']} shares) — ignoring BUY")
                 return
 
-            # Calculate qty: use 95% of buying power for simplicity
-            # (Father can adjust this later)
+            # Use 95% of buying power as notional (dollar amount)
+            # This works for crypto (fractional qty) and avoids rounding issues
             acct = broker.get_account()
-            current_price = price or 500  # Fallback
-            try:
-                current_price = float(price) if price else 500
-            except (ValueError, TypeError):
-                current_price = 500
-            qty = int(acct["buying_power"] * 0.25 / current_price)  # 25% of buying power
-            if qty < 1:
+            notional = round(acct["buying_power"] * 0.95, 2)
+            if notional < 10:
                 store.update_signal(signal_id, "rejected_insufficient_funds", error=f"buying_power={acct['buying_power']}")
                 log.error(f"Insufficient buying power for {symbol}")
                 return
 
             client_order_id = f"tv-{signal_id}"
-            result = broker.submit_buy(symbol, qty, client_order_id)
+            result = broker.submit_buy_notional(symbol, notional, client_order_id)
             store.update_signal(signal_id, "executed", order_id=result["order_id"])
-            store.store_trade(signal_id, result["order_id"], symbol, "buy", result.get("qty"), result["status"])
-            log.info(f"✅ BUY executed: {qty} {symbol} — order {result['order_id']}")
+            store.store_trade(signal_id, result["order_id"], symbol, "buy", result.get("qty", str(notional)), result["status"])
+            log.info(f"✅ BUY executed: ${notional} of {symbol} — order {result['order_id']}")
 
         elif action == "SELL":
             if not pos or float(pos["qty"]) <= 0:

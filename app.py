@@ -76,6 +76,8 @@ class WebhookPayload(BaseModel):
     action: str
     price: Union[str, float]
     time: str
+    low: Optional[Union[str, float]] = None   # For BUY stop loss
+    high: Optional[Union[str, float]] = None   # For SELL stop loss
 
     @field_validator("action")
     @classmethod
@@ -112,7 +114,7 @@ def validate_timestamp(time_str: str) -> bool:
 
 
 # ─── Execution (runs in background) ──────────────────────────
-def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[float]):
+def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[float], low: Optional[float] = None, high: Optional[float] = None):
     """Execute the trade on Alpaca. Runs after webhook response is sent."""
     try:
         # Safety check
@@ -159,13 +161,18 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
             store.store_trade(signal_id, result["order_id"], symbol, "buy", result.get("qty", str(notional)), result["status"])
             log.info(f"✅ BUY executed: ${notional} of {symbol} — order {result['order_id']}")
 
-            # 3. Set stop loss
-            if price and price > 0:
+            # 3. Set stop loss at previous candle low (or 2% fallback)
+            if low and float(low) > 0:
+                stop_price = round(float(low), 2)
+            elif price and price > 0:
                 stop_price = round(price * 0.98, 2)
+            else:
+                stop_price = None
+            if stop_price:
                 try:
                     import time; time.sleep(2)
                     broker.set_stop_loss(symbol, stop_price)
-                    log.info(f"🛡️ Stop loss set at ${stop_price} (2% below entry ${price})")
+                    log.info(f"🛡️ Stop loss set at ${stop_price} (candle low)")
                 except Exception as e:
                     log.error(f"⚠️ Failed to set stop loss: {e}")
 
@@ -195,13 +202,18 @@ def execute_signal(signal_id: str, symbol: str, action: str, price: Optional[flo
             store.store_trade(signal_id, result["order_id"], symbol, "sell_short", result.get("qty", str(notional)), result["status"])
             log.info(f"✅ SHORT executed: ${notional} of {symbol} — order {result['order_id']}")
 
-            # 3. Set stop loss (2% ABOVE entry for short)
-            if price and price > 0:
+            # 3. Set stop loss at previous candle high (or 2% fallback)
+            if high and float(high) > 0:
+                stop_price = round(float(high), 2)
+            elif price and price > 0:
                 stop_price = round(price * 1.02, 2)
+            else:
+                stop_price = None
+            if stop_price:
                 try:
                     import time; time.sleep(2)
                     broker.set_stop_loss_short(symbol, stop_price)
-                    log.info(f"🛡️ Short stop loss set at ${stop_price} (2% above entry ${price})")
+                    log.info(f"🛡️ Short stop loss set at ${stop_price} (candle high)")
                 except Exception as e:
                     log.error(f"⚠️ Failed to set short stop loss: {e}")
 
@@ -309,7 +321,16 @@ async def webhook_tradingview(request: Request, background_tasks: BackgroundTask
     log.info(f"ACCEPTED: {payload.action} {payload.symbol} @ {payload.price} — signal_id={signal_id}")
 
     # 9. Execute in background (fast response to TradingView)
-    background_tasks.add_task(execute_signal, signal_id, payload.symbol, payload.action, price)
+    try:
+        low_val = float(payload.low) if payload.low else None
+    except (ValueError, TypeError):
+        low_val = None
+    try:
+        high_val = float(payload.high) if payload.high else None
+    except (ValueError, TypeError):
+        high_val = None
+
+    background_tasks.add_task(execute_signal, signal_id, payload.symbol, payload.action, price, low_val, high_val)
 
     return JSONResponse(
         {"status": "accepted", "signal_id": signal_id, "action": payload.action, "symbol": payload.symbol},
